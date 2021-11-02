@@ -11,7 +11,7 @@ IrView::IrView()
 {   
 
     M5.begin();
-    
+    nvs_flash_init();
     M5.Lcd.setRotation(0);
     M5.Lcd.setSwapBytes(false);
     M5.Axp.EnableCoulombcounter();
@@ -68,9 +68,13 @@ IrView::~IrView()
 {
     ESP_LOGD(TAG, "Destructor called");
     disp_buffer->deleteSprite();
+    delete irrecv;
+    delete irsend;
     delete disp_buffer;
+    irrecv->disableIRIn();
     ESP_LOGD(TAG, "Destructor finished");
     gpio_reset_pin(GPIO_NUM_9);
+    gpio_reset_pin(GPIO_NUM_33);
 }
 
 void IrView::render()
@@ -149,7 +153,9 @@ void IrView::render()
        
         protocol = results.decode_type;
         size = results.bits;
-        success = true;
+        //success = true;
+        char const *head[] = {"head1","head2","head3","head4","head5","head6","head7","head8","head9","head10"};
+        nvs_write_wifi(&results,sizeof(results),head[count-1]);
         disp_buffer->drawString("recieved", 30, 220, 2);
         disp_buffer->pushSprite(0, 0);
         delay(1000);
@@ -158,30 +164,8 @@ void IrView::render()
         // Is it a protocol we don't understand?
     }
     if (digitalRead(M5_BUTTON_HOME) == LOW){
-        if (protocol == decode_type_t::UNKNOWN) {  // Yes.
-          // Convert the results into an array suitable for sendRaw().
-          // resultToRawArray() allocates the memory we need for the array.
-          uint16_t *raw_array = resultToRawArray(&results);
-          // Find out how many elements are in the array.
-          size = getCorrectedRawLength(&results);
-          #if SEND_RAW
-          // Send it out via the IR LED circuit.
-          irsend->sendRaw(raw_array, size, 38);
-          blinkenLight();
-          #endif  // SEND_RAW
-          // Deallocate the memory allocated by resultToRawArray().
-          delete [] raw_array;
-        } else if (hasACState(protocol)) {  // Does the message require a state[]?
-          // It does, so send with bytes instead.
-          success = irsend->send(protocol, results.state, size / 8);
-          blinkenLight();
-        } else {  // Anything else must be a simple message protocol. ie. <= 64 bits
-          success = irsend->send(protocol, results.value, size);
-          blinkenLight();
-        }
-        // Resume capturing IR messages. It was not restarted until after we sent
-        // the message so we didn't capture our own message.
-        irrecv->resume();
+        char const *heads[] = {"head1","head2","head3","head4","head5","head6","head7","head8","head9","head10"};
+        send_nvs(heads[count-1]);
       }
       
     M5.update();
@@ -195,8 +179,40 @@ void IrView::blinkenLight()
     digitalWrite(10, HIGH);
 }
 
+void IrView::send_nvs(const char *head)
+{
+        decode_results res; 
+        nvs_read_wifi(&res,head);
+        protocol = res.decode_type;
+        size = res.bits;
+        if (protocol == decode_type_t::UNKNOWN) {  // Yes.
+          // Convert the results into an array suitable for sendRaw().
+          // resultToRawArray() allocates the memory we need for the array.
+          uint16_t *raw_array = resultToRawArray(&res);
+          // Find out how many elements are in the array.
+          size = getCorrectedRawLength(&res);
+          #if SEND_RAW
+          // Send it out via the IR LED circuit.
+          irsend->sendRaw(raw_array, size, 38);
+          blinkenLight();
+          #endif  // SEND_RAW
+          // Deallocate the memory allocated by resultToRawArray().
+          delete [] raw_array;
+        } else if (hasACState(protocol)) {  // Does the message require a state[]?
+          // It does, so send with bytes instead.
+          success = irsend->send(protocol, res.state, size / 8);
+          blinkenLight();
+        } else {  // Anything else must be a simple message protocol. ie. <= 64 bits
+          success = irsend->send(protocol, res.value, size);
+          blinkenLight();
+        }
+        // Resume capturing IR messages. It was not restarted until after we sent
+        // the message so we didn't capture our own message.
+        irrecv->resume();
 
-esp_err_t IrView::nvs_read_wifi(struct decode_results *res, uint32_t *len, const char *head)
+}
+
+esp_err_t IrView::nvs_read_wifi(struct decode_results *res, const char *head)
 {
     
     esp_err_t err;
@@ -257,25 +273,29 @@ esp_err_t IrView::nvs_write_wifi(struct decode_results *res, uint32_t len, const
     
     esp_err_t err;
 
-    Serial.println("NVS_WRITE：fail0\n");
+    //Serial.println("NVS_WRITE：fail0\n");
     // Open
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK)
     {
-        Serial.println("NVS_WRITE：fail1\n");
+        Serial.println("NVS_WRITE：写入失败1");
         return err;
     }
     err = nvs_set_blob(nvs_handle, head, res, len);
     if (err != ESP_OK)
     {
-        Serial.println("NVS_WRITE：fail2\n");
+        Serial.println("NVS_WRITE：写入失败2");
         return err;
     }
     err = nvs_commit(nvs_handle);
     if (err != ESP_OK)
     {
-        Serial.println("NVS_WRITE：fail3\n");
+        Serial.println("NVS_WRITE：写入失败3");
         return err;
+    }
+    else
+    {
+        Serial.println("NVS_READ：写入成功");
     }
     nvs_close(nvs_handle);
     
