@@ -32,7 +32,8 @@ private:
     
     void blinkenLight();
     esp_err_t nvs_write_wifi(struct decode_results *res, uint32_t len, const char *head);
-    esp_err_t nvs_read_wifi(struct decode_results *res, uint32_t *len, const char *head);
+    esp_err_t nvs_read_wifi(struct decode_results *res, const char *head);
+    void send_nvs(const char *head);
     uint8_t count = 0;
     const uint16_t kRecvPin = 33;
     const uint32_t kBaudRate = 115200;
